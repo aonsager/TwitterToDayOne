@@ -34,7 +34,7 @@ unless first.nil?
     # keep track of the oldest tweet we've seen so far
     temp_id = st.id
   end
-  
+
   # check if we're still missing some tweets
   while temp_id > since_id
     options[:max_id] = temp_id-1
@@ -50,7 +50,9 @@ unless first.nil?
       temp_id = st.id
     end 
   end
-  
+end
+
+if tweets.length > 0
   # dump the data into DayOne
   tweets.each do |tweet|
     text = tweet[:text]
@@ -58,10 +60,9 @@ unless first.nil?
     %x{echo "#{text}" | /usr/local/bin/dayone -d="#{tweet[:date]}" new}
   end
   puts "#{Time.now}: Posted #{tweets.length} new tweets to DayOne"
-  
+
   # save the latest tweet's id as since_id 
   File.open(File.join(AppRoot, "latest_tweet"), "w+") {|f| f.write(first.id) }
-   
-else
+else 
   puts "#{Time.now}: No new tweets"
 end
