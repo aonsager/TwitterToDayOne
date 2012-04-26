@@ -3,16 +3,18 @@
 require 'rubygems'
 require 'twitter'
 
-if File.exists? "latest_tweet"
-  since_id = File.open("latest_tweet", "r").read.to_i
+AppRoot = File.expand_path(File.dirname(__FILE__))
+
+if File.exists? File.join(AppRoot, "latest_tweet")
+  since_id = File.open(File.join(AppRoot, "latest_tweet"), "r").read.to_i
 else 
   since_id = 0
 end
 
-# only get results for the past week. change as needed
-time_limit = Time.now - 60*60*24*7
+# only get results for the past day. change as needed
+time_limit = Time.now - 60*60*24*1
 
-username = "insert_username_here"
+username = "aonsager"
 options = Hash.new
 options[:since_id] = since_id unless since_id == 0;
 tweets = Array.new
@@ -55,9 +57,11 @@ unless first.nil?
     text += " [(tweet)](https://twitter.com/#!/#{tweet[:user]}/status/#{tweet[:id]})"
     %x{echo "#{text}" | /usr/local/bin/dayone -d="#{tweet[:date]}" new}
   end
+  puts "#{Time.now}: Posted #{tweets.length} new tweets to DayOne"
   
   # save the latest tweet's id as since_id 
-  File.open("latest_tweet", "w") {|f| f.write(first.id) }
+  File.open(File.join(AppRoot, "latest_tweet"), "w+") {|f| f.write(first.id) }
+   
 else
-  puts 'No new tweets'
+  puts "#{Time.now}: No new tweets"
 end
