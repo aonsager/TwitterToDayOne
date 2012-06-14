@@ -29,6 +29,7 @@ favorites = Twitter.favorites(username, options)
 statuses.each { |st| st.instance_variable_set(:@type, 'tweet') }
 temp_retweets.each { |st| 
   st.retweeted_status.instance_variable_set(:@type, 'retweet')
+  st.retweeted_status.instance_variable_set(:@my_id, st.id)
   retweets << st.retweeted_status 
 }
 favorites.each { |st| st.instance_variable_set(:@type, 'favorite') }
@@ -74,10 +75,11 @@ if tweets.length > 0
     text += " [(#{tweet[:type]})](https://twitter.com/#!/#{tweet[:user]}/status/#{tweet[:id]})"
     %x{echo "#{text}" | /usr/local/bin/dayone -d="#{tweet[:date]}" new}
   end
-  puts "#{Time.now}: Posted #{tweets.length} new tweets to DayOne"
-
   # save the latest tweet's id as since_id 
-  File.open(File.join(AppRoot, "latest_tweet"), "w+") {|f| f.write(first.id) }
+  since_id = first.instance_variable_get(:@my_id).nil? ? first.id : first.instance_variable_get(:@my_id)
+  File.open(File.join(AppRoot, "latest_tweet"), "w+") {|f| f.write(since_id) }
+  puts "#{Time.now}: Posted #{tweets.length} new tweets to DayOne. Last imported tweet_id: #{since_id}"
+
 else 
-  puts "#{Time.now}: No new tweets"
+  puts "#{Time.now}: No new tweets. Last imported tweet_id: #{since_id}"
 end
