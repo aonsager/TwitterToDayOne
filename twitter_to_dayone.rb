@@ -1,7 +1,13 @@
 #!/usr/bin/env ruby
+# encoding: utf-8
 
 require 'rubygems'
+require 'time'
 require 'twitter'
+require 'nokogiri'
+require 'nokogiri-plist'
+require 'erb'
+require_relative 't2d1-config'
 
 AppRoot = File.expand_path(File.dirname(__FILE__))
 
@@ -11,41 +17,50 @@ else
   since_id = 0
 end
 
-# only get results for the past week. change as needed
-time_limit = Time.now - 60*60*24*7
-
-username = "aonsager"
 options = Hash.new
-options[:since_id] = since_id unless since_id == 0;
+options[:since_id] = since_id unless since_id == 0
 tweets = Array.new
 temp_id = 0
 
-# get the most recent tweets, but not before since_id
-statuses = Twitter.user_timeline(username, options)
-temp_retweets = Twitter.retweeted_by(username, options)
-retweets = Array.new()
-favorites = Twitter.favorites(username, options)
+def get_more_tweets(options)
+  # get the most recent tweets, but not before since_id
+  statuses = Twitter.user_timeline(@username, options)
+  favorites = Twitter.favorites(@username, options)
 
-statuses.each { |st| st.instance_variable_set(:@type, 'tweet') }
-temp_retweets.each { |st| 
-  st.retweeted_status.instance_variable_set(:@type, 'retweet')
-  st.retweeted_status.instance_variable_set(:@my_id, st.id)
-  retweets << st.retweeted_status 
-}
-favorites.each { |st| st.instance_variable_set(:@type, 'favorite') }
+  statuses.each { |st| 
+    # translate the time into local time
+    time = Time.parse(st.created_at.to_s)
+    time = time.getlocal(st.user.utc_offset)
+    st.instance_variable_set(:@time, time)
+    #tweets show the time
+    st.instance_variable_set(:@type, time.strftime("%R")) 
+  }
+  favorites.each { |st| 
+    # translate the time into local time
+    time = Time.parse(st.created_at.to_s)
+    time = time.getlocal(st.user.utc_offset)
+    st.instance_variable_set(:@time, time) 
+    # favorites show a star, and the tweeter's username
+    st.text.prepend('☆ ')
+    st.instance_variable_set(:@type, st.user.screen_name) 
+  }
 
-# merge the lists and sort by time created
-statuses += retweets + favorites
-statuses = statuses.inject([]) { |result,h| result << h unless result.include?(h); result }
-statuses.sort! { |a,b| b.id <=> a.id }
+  # merge the lists and sort by time created
+  statuses += favorites
+  statuses = statuses.inject([]) { |result,h| result << h unless result.include?(h); result }
+  statuses.sort! { |a,b| b.id <=> a.id }
 
-# grab the most recent tweet so we can use it as since_id next time
-first = statuses[0]
+  return statuses
+end
+
+# grab most recent tweets
+statuses = get_more_tweets(options)
 
 # check if there are new tweets
-unless first.nil?
+unless statuses.length == 0
   statuses.each do |st|
-    break if st.created_at < time_limit
+    break if st.created_at < @time_limit
+    # save just the information we need
     tweets << Hash[:date => st.created_at, :text => st.text, :id => st.id, :user => st.user.screen_name, :type => st.instance_variable_get(:@type)]
     # keep track of the oldest tweet we've seen so far
     temp_id = st.id
@@ -54,14 +69,16 @@ unless first.nil?
   # check if we're still missing some tweets
   while temp_id > since_id
     options[:max_id] = temp_id-1
-    # grab 20 more tweets between since_id and the batch we just got
-    statuses = Twitter.user_timeline(username, options)
+    # grab more tweets between since_id and the batch we just got
+    statuses = get_more_tweets(options)
+
     # if there were no more tweets left, or we've gone back far enough, we're done
-    break if statuses.length == 0 or statuses[0].created_at < time_limit
+    break if statuses.length == 0 or statuses[0].created_at < @time_limit
     # process each tweet
     statuses.each do |st|
-      break if st.created_at < time_limit
-      tweets << Hash[:date => st.created_at, :text => st.text, :id => st.id, :user => st.user.screen_name]
+      break if st.created_at < @time_limit
+      # save just the information we need
+      tweets << Hash[:date => st.instance_variable_get(:@time), :text => st.text, :id => st.id, :user => st.user.screen_name, :type => st.instance_variable_get(:@type)]
       # keep track of the oldest tweet we've seen so far
       temp_id = st.id
     end 
@@ -69,16 +86,32 @@ unless first.nil?
 end
 
 if tweets.length > 0
+  # grab the most recent tweet so we can use it as since_id next time
+  first = tweets[0]
+
   # dump the data into DayOne
-  tweets.each do |tweet|
-    text = tweet[:text]
-    text += " [(#{tweet[:type]})](https://twitter.com/#!/#{tweet[:user]}/status/#{tweet[:id]})"
-    %x{echo "#{text}" | /usr/local/bin/dayone -d="#{tweet[:date]}" new}
+  # loop oldest first
+  tweets.reverse_each do |tweet| 
+    date = Time.parse(tweet[:date].to_s)
+    uuid = "TWITTER" + "000000000000000" + date.strftime("%Y%m%d")
+    text = "* #{tweet[:text]} [(#{tweet[:type]})](https://twitter.com/#!/#{tweet[:user]}/status/#{tweet[:id]})"
+
+    filepath = "/Users/aonsager/Dropbox/Apps/Day One/Journal.dayone/entries/#{uuid}.doentry"
+
+    if File.exists? filepath
+      plist = Nokogiri::PList(open(filepath))
+      plist['Entry Text'] += "\n\n#{text}"
+      File.open(filepath, "w+") {|f| f.write(plist.to_plist_xml) }
+    else 
+      #make a new entry file
+      created_time = date.strftime("%FT00:00:00Z")
+      text = "Tweets for #{date.strftime('%F')}\n\n" + text
+      File.open(filepath, "w+") {|f| f.write(@template.result(binding)) }
+    end
   end
-  # save the latest tweet's id as since_id 
-  since_id = first.instance_variable_get(:@my_id).nil? ? first.id : first.instance_variable_get(:@my_id)
-  File.open(File.join(AppRoot, "latest_tweet"), "w+") {|f| f.write(since_id) }
-  puts "#{Time.now}: Posted #{tweets.length} new tweets to DayOne. Last imported tweet_id: #{since_id}"
+  # save the latest tweet's id 
+  File.open(File.join(AppRoot, "latest_tweet"), "w+") {|f| f.write(first[:id]) }
+  puts "#{Time.now}: Posted #{tweets.length} new tweets to DayOne. Last imported tweet_id: #{first[:id]}"
 
 else 
   puts "#{Time.now}: No new tweets. Last imported tweet_id: #{since_id}"
