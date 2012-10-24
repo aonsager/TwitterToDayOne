@@ -7,6 +7,8 @@ end
 
 @username = "TWITTERUSERNAME"
 
+@dayone_journal_path = "/Users/USERNAME/Dropbox/Apps/Day One/Journal.dayone"
+
 # only get results for the past week. change as needed
 @time_limit = Time.now - 60*60*24*7
 

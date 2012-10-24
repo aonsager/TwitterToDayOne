@@ -47,7 +47,6 @@ def get_more_tweets(options)
 
   # merge the lists and sort by time created
   statuses += favorites
-  statuses = statuses.inject([]) { |result,h| result << h unless result.include?(h); result }
   statuses.sort! { |a,b| b.id <=> a.id }
 
   return statuses
@@ -96,7 +95,7 @@ if tweets.length > 0
     uuid = "TWITTER" + "000000000000000" + date.strftime("%Y%m%d")
     text = "* #{tweet[:text]} [(#{tweet[:type]})](https://twitter.com/#!/#{tweet[:user]}/status/#{tweet[:id]})"
 
-    filepath = "/Users/aonsager/Dropbox/Apps/Day One/Journal.dayone/entries/#{uuid}.doentry"
+    filepath = "#{@dayone_journal_path}/entries/#{uuid}.doentry"
 
     if File.exists? filepath
       plist = Nokogiri::PList(open(filepath))
