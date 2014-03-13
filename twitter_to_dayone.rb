@@ -24,14 +24,15 @@ temp_id = 0
 
 def get_more_tweets(options)
   # get the most recent tweets, but not before since_id
-  statuses = Twitter.user_timeline(@username, options)
-  favorites = Twitter.favorites(@username, options)
+  statuses = @client.user_timeline(@username, options)
+  favorites = @client.favorites(@username, options)
 
   statuses.each { |st| 
     # translate the time into local time
     time = Time.parse(st.created_at.to_s)
     time = time.getlocal(st.user.utc_offset)
     st.instance_variable_set(:@time, time)
+    st.instance_variable_set(:@fav, false)
     #tweets show the time
     st.instance_variable_set(:@type, time.strftime("%R")) 
   }
@@ -41,7 +42,8 @@ def get_more_tweets(options)
     time = time.getlocal(st.user.utc_offset)
     st.instance_variable_set(:@time, time) 
     # favorites show a star, and the tweeter's username
-    st.text.prepend('☆ ')
+    # st.text.prepend('☆ ')
+    st.instance_variable_set(:@fav, true)
     st.instance_variable_set(:@type, st.user.screen_name) 
   }
 
@@ -60,7 +62,8 @@ unless statuses.length == 0
   statuses.each do |st|
     break if st.created_at < @time_limit
     # save just the information we need
-    tweets << Hash[:date => st.created_at, :text => st.text, :id => st.id, :user => st.user.screen_name, :type => st.instance_variable_get(:@type)]
+    st.instance_variable_get(:@fav) == true ? text = '☆ ' + st.text : text = st.text
+    tweets << Hash[:date => st.created_at, :text => text, :id => st.id, :user => st.user.screen_name, :type => st.instance_variable_get(:@type)]
     # keep track of the oldest tweet we've seen so far
     temp_id = st.id
   end
@@ -85,8 +88,9 @@ unless statuses.length == 0
 end
 
 if tweets.length > 0
-  # grab the most recent tweet so we can use it as since_id next time
+  # grab the most recent tweet and save it as since_id
   first = tweets[0]
+  File.open(File.join(AppRoot, "latest_tweet"), "w+") {|f| f.write(first[:id]) }
 
   # dump the data into DayOne
   # loop oldest first
@@ -108,8 +112,7 @@ if tweets.length > 0
       File.open(filepath, "w+") {|f| f.write(@template.result(binding)) }
     end
   end
-  # save the latest tweet's id 
-  File.open(File.join(AppRoot, "latest_tweet"), "w+") {|f| f.write(first[:id]) }
+
   puts "#{Time.now}: Posted #{tweets.length} new tweets to DayOne. Last imported tweet_id: #{first[:id]}"
 
 else 
